@@ -1,0 +1,3 @@
+# ignore followign folders
+data/MNIST/*
+output/*
