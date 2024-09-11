@@ -27,3 +27,9 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt
 ```
+
+# Run the script and generate the samples in the `output` folder
+
+```bash
+python train.py
+```
