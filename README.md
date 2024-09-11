@@ -1,3 +1,15 @@
+
+# To clone the repository, use the following command:
+
+```bash
+git clone git@github.com:grzemal/diffusion_model.git
+```
+
+# Enter the repository:
+```bash
+cd diffusion_model
+```
+
 # Create the virtual environment
 
 ```bash
