@@ -31,5 +31,6 @@ pip install -r requirements.txt
 # Run the script and generate the samples in the `output` folder
 
 ```bash
+mkdir output
 python train.py
 ```
