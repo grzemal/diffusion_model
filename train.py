@@ -333,49 +333,50 @@ def train_mnist():
         
         # for eval, save an image of currently generated samples (top rows)
         # followed by real images (bottom rows)
-        ddpm.eval()
-        with torch.no_grad():
-            n_sample = n_classes
-            x_gen, x_gen_store = ddpm.sample(n_sample, (1, 28, 28), device)
-            print(x_gen_store.shape)
-            # append some real images at bottom, order by class also
-            x_real = torch.Tensor(x_gen.shape).to(device)
-            for k in range(n_classes):
-                for j in range(int(n_sample/n_classes)):
-                    try: 
-                        idx = torch.squeeze((c == k).nonzero())[j]
-                    except:
-                        idx = 0
-                    x_real[k+(j*n_classes)] = x[idx]
-            x_all = torch.cat([x_gen, x_real])
-            
-            # save images and make the background black and digits white for better visibility
-            fig, ax = plt.subplots(1, 10, figsize=(10, 1))
-            for i in range(10):
-                ax[i].imshow(x_all[i].cpu().numpy().reshape(28, 28), cmap='gray')
-                ax[i].axis('off')
-            plt.subplots_adjust(hspace=0.1)
-            plt.savefig(save_dir + f"image_ep{ep}.png")
-            plt.close()
-            print('saved image at ' + save_dir + f"image_ep{ep}.png")
-            
-            fig, ax = plt.subplots(10,8, figsize=(10, 10))
-            for i in range(10):
-                for j in range(8):
-                    if j==7:
-                        ax[i,j].imshow(x_gen_store[-1,i].reshape(28, 28), cmap='gray')
-                    else:
-                        ax[i,j].imshow(x_gen_store[4*j + 4,i].reshape(28, 28), cmap='gray')
-                    ax[i,j].axis('off')
-            plt.subplots_adjust(hspace=0.1)
-            plt.savefig(save_dir + f"image_ep{ep}_t.png")
-            plt.close()
-            print('saved image at ' + save_dir + f"image_ep{ep}_t.png")
+        if ep == n_epoch-1:
+            ddpm.eval()
+            with torch.no_grad():
+                n_sample = n_classes
+                x_gen, x_gen_store = ddpm.sample(n_sample, (1, 28, 28), device)
 
-        # optionally save model
-        if save_model and ep == int(n_epoch-1):
-            torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
-            print('saved model at ' + save_dir + f"model_{ep}.pth")
+                # append some real images at bottom, order by class also
+                x_real = torch.Tensor(x_gen.shape).to(device)
+                for k in range(n_classes):
+                    for j in range(int(n_sample/n_classes)):
+                        try: 
+                            idx = torch.squeeze((c == k).nonzero())[j]
+                        except:
+                            idx = 0
+                        x_real[k+(j*n_classes)] = x[idx]
+                x_all = torch.cat([x_gen, x_real])
+
+                # save images and make the background black and digits white for better visibility
+                fig, ax = plt.subplots(1, 10, figsize=(10, 1))
+                for i in range(10):
+                    ax[i].imshow(x_all[i].cpu().numpy().reshape(28, 28), cmap='gray')
+                    ax[i].axis('off')
+                plt.subplots_adjust(hspace=0.1)
+                plt.savefig(save_dir + f"image_ep{ep}.png")
+                plt.close()
+                print('saved image at ' + save_dir + f"image_ep{ep}.png")
+
+                fig, ax = plt.subplots(10,8, figsize=(10, 10))
+                for i in range(10):
+                    for j in range(8):
+                        if j==7:
+                            ax[i,j].imshow(x_gen_store[-1,i].reshape(28, 28), cmap='gray')
+                        else:
+                            ax[i,j].imshow(x_gen_store[4*j + 4,i].reshape(28, 28), cmap='gray')
+                        ax[i,j].axis('off')
+                plt.subplots_adjust(hspace=0.1)
+                plt.savefig(save_dir + f"image_ep{ep}_t.png")
+                plt.close()
+                print('saved image at ' + save_dir + f"image_ep{ep}_t.png")
+
+            # save model
+            if save_model:
+                torch.save(ddpm.state_dict(), save_dir + f"model_{ep}.pth")
+                print('saved model at ' + save_dir + f"model_{ep}.pth")
 
 
 if __name__ == "__main__":
