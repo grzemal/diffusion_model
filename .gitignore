@@ -1,3 +1,4 @@
 # ignore followign folders
 data/MNIST/*
-output/*
+output/image*
+output/model*
