@@ -241,7 +241,7 @@ class DDPM(nn.Module):
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
 
             # split predictions and compute weighting
-            eps = self.nn_model(x_i, t_is)
+            eps = self.nn_model(x_i, t_is)[:n_sample]
             x_i = x_i[:n_sample]
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
@@ -304,18 +304,10 @@ def train_mnist():
                 n_sample = 10
                 x_gen, x_gen_store = ddpm.sample(n_sample, (1, 28, 28), device)
 
-                # append some real images at bottom, order by class also
-                x_real = torch.Tensor(x_gen.shape).to(device)
-                for k in range(n_sample):
-                    for j in range(int(n_sample)):
-                        idx = 0
-                        x_real[k+(j*n_sample)] = x[idx]
-                x_all = torch.cat([x_gen, x_real])
-
                 # save images and make the background black and digits white for better visibility
                 fig, ax = plt.subplots(1, 10, figsize=(10, 1))
                 for i in range(10):
-                    ax[i].imshow(x_all[i].cpu().numpy().reshape(28, 28), cmap='gray')
+                    ax[i].imshow(x_gen[i].cpu().numpy().reshape(28, 28), cmap='gray')
                     ax[i].axis('off')
                 plt.subplots_adjust(hspace=0.1)
                 plt.savefig(save_dir + f"image_ep{ep}.png")
@@ -342,19 +334,3 @@ def train_mnist():
 
 if __name__ == "__main__":
     train_mnist()
-    # Briefly discuss the network I used above. Cover architecture, what it models, and how the diffusion t is encoded.
-    # The network is a U-Net with residual blocks, which is a common architecture for image generation tasks.
-    # The network takes in an image and a timestep t, and outputs a prediction of the noise at that timestep.
-    # The timestep is encoded by embedding it into a vector, which is then concatenated with the feature maps at each layer.
-    # This allows the network to condition its predictions on the timestep, which is important for diffusion models.
-    # The network is trained to minimize the mean squared error between the predicted noise and the true noise at each timestep.
-    # This allows the network to learn to predict the noise distribution at each timestep, which can then be used to generate samples.
-    # The network is trained using the DDPM loss, which is a loss function that is designed to model the diffusion process.
-    # The network is trained using the MNIST dataset, which is a dataset of handwritten digits. The network is trained to generate samples of handwritten digits, conditioned on the timestep.
-    # The network is trained for 20 epochs, and the model and generated samples are saved at the end of training.
-    # The network is trained using the Adam optimizer with a learning rate of 1e-4. The network is trained on a GPU, which allows for faster training.
-    # The network is trained using a batch size of 256, which allows for efficient training on the GPU.
-    # The network is trained using the MNIST dataset, which is a dataset of handwritten digits. The network is trained to generate samples of handwritten digits, conditioned on the timestep.
-    
-    
-    
