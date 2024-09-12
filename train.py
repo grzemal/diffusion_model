@@ -296,8 +296,7 @@ def train_mnist():
             pbar.set_description(f"loss: {loss_ema:.4f}")
             optim.step()
         
-        # for eval, save an image of currently generated samples (top rows)
-        # followed by real images (bottom rows)
+        # for eval, save an image of generated samples after last epoch
         if ep == n_epoch-1:
             ddpm.eval()
             with torch.no_grad():
