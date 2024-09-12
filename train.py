@@ -7,11 +7,6 @@ https://github.com/cloneofsimo/minDiffusion
 Diffusion model is based on DDPM,
 https://arxiv.org/abs/2006.11239
 
-The conditioning idea is taken from 'Classifier-Free Diffusion Guidance',
-https://arxiv.org/abs/2207.12598
-
-This technique also features in ImageGen 'Photorealistic Text-to-Image Diffusion Modelswith Deep Language Understanding',
-https://arxiv.org/abs/2205.11487
 
 '''
 
@@ -23,9 +18,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import MNIST
-from torchvision.utils import save_image, make_grid
 import numpy as np
-
 import matplotlib.pyplot as plt
 
 class ResidualConvBlock(nn.Module):
@@ -117,12 +110,11 @@ class EmbedFC(nn.Module):
 
 
 class Unet(nn.Module):
-    def __init__(self, in_channels, n_feat = 256, n_classes=10):
+    def __init__(self, in_channels, n_feat = 256):
         super(Unet, self).__init__()
 
         self.in_channels = in_channels
         self.n_feat = n_feat
-        self.n_classes = n_classes
 
         self.init_conv = ResidualConvBlock(in_channels, n_feat, is_res=True)
 
@@ -133,12 +125,9 @@ class Unet(nn.Module):
 
         self.timeembed1 = EmbedFC(1, 2*n_feat)
         self.timeembed2 = EmbedFC(1, 1*n_feat)
-        self.contextembed1 = EmbedFC(n_classes, 2*n_feat)
-        self.contextembed2 = EmbedFC(n_classes, 1*n_feat)
 
         self.up0 = nn.Sequential(
-            # nn.ConvTranspose2d(6 * n_feat, 2 * n_feat, 7, 7), # when concat temb and cemb end up w 6*n_feat
-            nn.ConvTranspose2d(2 * n_feat, 2 * n_feat, 7, 7), # otherwise just have 2*n_feat
+            nn.ConvTranspose2d(2 * n_feat, 2 * n_feat, 7, 7),
             nn.GroupNorm(8, 2 * n_feat),
             nn.ReLU(),
         )
@@ -152,31 +141,22 @@ class Unet(nn.Module):
             nn.Conv2d(n_feat, self.in_channels, 3, 1, 1),
         )
 
-    def forward(self, x, c, t):
-        # x is (noisy) image, c is context label, t is timestep, 
-        # context_mask says which samples to block the context on
+    def forward(self, x, t):
+        # x is (noisy) image, t is timestep, 
 
         x = self.init_conv(x)
         down1 = self.down1(x)
         down2 = self.down2(down1)
         hiddenvec = self.to_vec(down2)
-
-        # convert context to one hot embedding
-        c = nn.functional.one_hot(c, num_classes=self.n_classes).type(torch.float)
         
-        # embed context, time step
-        cemb1 = self.contextembed1(c).view(-1, self.n_feat * 2, 1, 1)
+        # embed time step
         temb1 = self.timeembed1(t).view(-1, self.n_feat * 2, 1, 1)
-        cemb2 = self.contextembed2(c).view(-1, self.n_feat, 1, 1)
         temb2 = self.timeembed2(t).view(-1, self.n_feat, 1, 1)
 
-        # could concatenate the context embedding here instead of adaGN
-        # hiddenvec = torch.cat((hiddenvec, temb1, cemb1), 1)
 
         up1 = self.up0(hiddenvec)
-        # up2 = self.up1(up1, down2) # if want to avoid add and multiply embeddings
-        up2 = self.up1(cemb1*up1+ temb1, down2)  # add and multiply embeddings
-        up3 = self.up2(cemb2*up2+ temb2, down1)
+        up2 = self.up1(up1+ temb1, down2)
+        up3 = self.up2(up2+ temb2, down1)
         out = self.out(torch.cat((up3, x), 1))
         return out
 
@@ -225,7 +205,7 @@ class DDPM(nn.Module):
         self.drop_prob = drop_prob
         self.loss_mse = nn.MSELoss()
 
-    def forward(self, x, c):
+    def forward(self, x):
         """
         this method is used in training, so samples t and noise randomly
         """
@@ -240,21 +220,12 @@ class DDPM(nn.Module):
         # We should predict the "error term" from this x_t. Loss is what we return.
         
         # return MSE between added noise, and our predicted noise
-        return self.loss_mse(noise, self.nn_model(x_t, c, _ts / self.n_T))
+        return self.loss_mse(noise, self.nn_model(x_t, _ts / self.n_T))
 
-    def sample(self, n_sample, size, device, guide_w = 1.0):
-        # we follow the guidance sampling scheme described in 'Classifier-Free Diffusion Guidance'
-        # to make the fwd passes efficient, we concat two versions of the dataset,
-        # one with context_mask=0 and the other context_mask=1
-        # we then mix the outputs with the guidance scale, w
-        # where w>0 means more guidance
+    def sample(self, n_sample, size, device):
+        # to make the fwd passes efficient, we concat two versions of the dataset
 
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1), sample initial noise
-        c_i = torch.arange(0,10).to(device) # context for us just cycles throught the mnist labels
-        c_i = c_i.repeat(int(n_sample/c_i.shape[0]))
-
-        # double the batch
-        c_i = c_i.repeat(2)
 
         x_i_store = [] # keep track of generated steps in case want to plot something 
         print()
@@ -270,10 +241,7 @@ class DDPM(nn.Module):
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
 
             # split predictions and compute weighting
-            eps = self.nn_model(x_i, c_i, t_is)
-            eps1 = eps[:n_sample]
-            eps2 = eps[n_sample:]
-            eps = (1+guide_w)*eps1 - guide_w*eps2
+            eps = self.nn_model(x_i, t_is)
             x_i = x_i[:n_sample]
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
@@ -293,14 +261,12 @@ def train_mnist():
     batch_size = 256
     n_T = 500 # 500
     device = "cuda:0"
-    n_classes = 10
     n_feat = 256 # 128 ok, 256 better (but slower)
     lrate = 1e-4
     save_model = True
     save_dir = './output/'
-    # ws_test = [0] # strength of generative guidance
 
-    ddpm = DDPM(nn_model=Unet(in_channels=1, n_feat=n_feat, n_classes=n_classes), betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
+    ddpm = DDPM(nn_model=Unet(in_channels=1, n_feat=n_feat), betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)
 
     tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
@@ -318,11 +284,10 @@ def train_mnist():
 
         pbar = tqdm(dataloader)
         loss_ema = None
-        for x, c in pbar:
+        for x, _ in pbar:
             optim.zero_grad()
             x = x.to(device)
-            c = c.to(device)
-            loss = ddpm(x, c)
+            loss = ddpm(x)
             loss.backward()
             if loss_ema is None:
                 loss_ema = loss.item()
@@ -336,18 +301,15 @@ def train_mnist():
         if ep == n_epoch-1:
             ddpm.eval()
             with torch.no_grad():
-                n_sample = n_classes
+                n_sample = 10
                 x_gen, x_gen_store = ddpm.sample(n_sample, (1, 28, 28), device)
 
                 # append some real images at bottom, order by class also
                 x_real = torch.Tensor(x_gen.shape).to(device)
-                for k in range(n_classes):
-                    for j in range(int(n_sample/n_classes)):
-                        try: 
-                            idx = torch.squeeze((c == k).nonzero())[j]
-                        except:
-                            idx = 0
-                        x_real[k+(j*n_classes)] = x[idx]
+                for k in range(n_sample):
+                    for j in range(int(n_sample)):
+                        idx = 0
+                        x_real[k+(j*n_sample)] = x[idx]
                 x_all = torch.cat([x_gen, x_real])
 
                 # save images and make the background black and digits white for better visibility
@@ -360,14 +322,13 @@ def train_mnist():
                 plt.close()
                 print('saved image at ' + save_dir + f"image_ep{ep}.png")
 
-                fig, ax = plt.subplots(10,8, figsize=(10, 10))
-                for i in range(10):
-                    for j in range(8):
-                        if j==7:
-                            ax[i,j].imshow(x_gen_store[-1,i].reshape(28, 28), cmap='gray')
-                        else:
-                            ax[i,j].imshow(x_gen_store[4*j + 4,i].reshape(28, 28), cmap='gray')
-                        ax[i,j].axis('off')
+                fig, ax = plt.subplots(1,8, figsize=(8, 1))
+                for j in range(8):
+                    if j==7:
+                        ax[j].imshow(x_gen_store[-1,0].reshape(28, 28), cmap='gray')
+                    else:
+                        ax[j].imshow(x_gen_store[4*j + 4,0].reshape(28, 28), cmap='gray')
+                    ax[j].axis('off')
                 plt.subplots_adjust(hspace=0.1)
                 plt.savefig(save_dir + f"image_ep{ep}_t.png")
                 plt.close()
@@ -381,3 +342,19 @@ def train_mnist():
 
 if __name__ == "__main__":
     train_mnist()
+    # Briefly discuss the network I used above. Cover architecture, what it models, and how the diffusion t is encoded.
+    # The network is a U-Net with residual blocks, which is a common architecture for image generation tasks.
+    # The network takes in an image and a timestep t, and outputs a prediction of the noise at that timestep.
+    # The timestep is encoded by embedding it into a vector, which is then concatenated with the feature maps at each layer.
+    # This allows the network to condition its predictions on the timestep, which is important for diffusion models.
+    # The network is trained to minimize the mean squared error between the predicted noise and the true noise at each timestep.
+    # This allows the network to learn to predict the noise distribution at each timestep, which can then be used to generate samples.
+    # The network is trained using the DDPM loss, which is a loss function that is designed to model the diffusion process.
+    # The network is trained using the MNIST dataset, which is a dataset of handwritten digits. The network is trained to generate samples of handwritten digits, conditioned on the timestep.
+    # The network is trained for 20 epochs, and the model and generated samples are saved at the end of training.
+    # The network is trained using the Adam optimizer with a learning rate of 1e-4. The network is trained on a GPU, which allows for faster training.
+    # The network is trained using a batch size of 256, which allows for efficient training on the GPU.
+    # The network is trained using the MNIST dataset, which is a dataset of handwritten digits. The network is trained to generate samples of handwritten digits, conditioned on the timestep.
+    
+    
+    

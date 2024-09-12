@@ -2,3 +2,4 @@
 data/MNIST/*
 output/image*
 output/model*
+venv/*
