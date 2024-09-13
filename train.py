@@ -257,7 +257,7 @@ class DDPM(nn.Module):
 def train_mnist():
 
     # hardcoding these here
-    n_epoch = 20
+    n_epoch = 40
     batch_size = 256
     n_T = 500 # 500
     device = "cuda:0"
