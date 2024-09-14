@@ -34,3 +34,5 @@ pip install -r requirements.txt
 mkdir output
 python train.py
 ```
+
+After the training is done the figures from the report can be found in the `output` directory.
