@@ -1,5 +1,6 @@
 ''' 
-This script does conditional image generation on MNIST, using a diffusion model
+This script is the assigment for Task 1 in DT8122 
+The script aims to perform image generation on MNIST using a diffusion model
 
 This code is modified from,
 https://github.com/cloneofsimo/minDiffusion
@@ -10,11 +11,10 @@ https://arxiv.org/abs/2006.11239
 
 '''
 
-from typing import Dict, Tuple
+from typing import Dict
 from tqdm import tqdm
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import MNIST
@@ -46,8 +46,9 @@ class ResidualConvBlock(nn.Module):
         if self.is_res:
             x1 = self.conv1(x)
             x2 = self.conv2(x1)
-            # this adds on correct residual in case channels have increased
+            
             if self.same_channels:
+                # this adds on correct residual in case channels have increased
                 out = x + x2
             else:
                 out = x1 + x2 
@@ -62,7 +63,7 @@ class UnetDown(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(UnetDown, self).__init__()
         '''
-        process and downscale the image feature maps
+        Goal of the UnerDown: process and downscale the image feature maps
         '''
         layers = [ResidualConvBlock(in_channels, out_channels), nn.MaxPool2d(2)]
         self.model = nn.Sequential(*layers)
@@ -75,7 +76,7 @@ class UnetUp(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(UnetUp, self).__init__()
         '''
-        process and upscale the image feature maps
+        Goal of the UnerUp: process and upscale the image feature maps
         '''
         layers = [
             nn.ConvTranspose2d(in_channels, out_channels, 2, 2),
@@ -94,7 +95,7 @@ class EmbedFC(nn.Module):
     def __init__(self, input_dim, emb_dim):
         super(EmbedFC, self).__init__()
         '''
-        generic one layer FC NN for embedding things  
+        Goal of the class: generic one layer FC neurnal network for embeddings  
         '''
         self.input_dim = input_dim
         layers = [
@@ -142,18 +143,19 @@ class Unet(nn.Module):
         )
 
     def forward(self, x, t):
-        # x is (noisy) image, t is timestep, 
 
+        # x is a noisy image and t is timestep
         x = self.init_conv(x)
+        # downsample
         down1 = self.down1(x)
         down2 = self.down2(down1)
         hiddenvec = self.to_vec(down2)
         
-        # embed time step
+        # embedding with time step
         temb1 = self.timeembed1(t).view(-1, self.n_feat * 2, 1, 1)
         temb2 = self.timeembed2(t).view(-1, self.n_feat, 1, 1)
 
-
+        # upsample
         up1 = self.up0(hiddenvec)
         up2 = self.up1(up1+ temb1, down2)
         up3 = self.up2(up2+ temb2, down1)
@@ -172,7 +174,7 @@ def ddpm_schedules(beta1, beta2, T):
     alpha_t = 1 - beta_t
     log_alpha_t = torch.log(alpha_t)
     alphabar_t = torch.cumsum(log_alpha_t, dim=0).exp()
-
+    
     sqrtab = torch.sqrt(alphabar_t)
     oneover_sqrta = 1 / torch.sqrt(alpha_t)
 
@@ -196,7 +198,7 @@ class DDPM(nn.Module):
         self.nn_model = nn_model.to(device)
 
         # register_buffer allows accessing dictionary produced by ddpm_schedules
-        # e.g. can access self.sqrtab later
+        # to improve accesibility of the variables later
         for k, v in ddpm_schedules(betas[0], betas[1], n_T).items():
             self.register_buffer(k, v)
 
@@ -207,27 +209,24 @@ class DDPM(nn.Module):
 
     def forward(self, x):
         """
-        this method is used in training, so samples t and noise randomly
+        Goal: sample t and noise randomly for the process
         """
-
-        _ts = torch.randint(1, self.n_T+1, (x.shape[0],)).to(self.device)  # t ~ Uniform(0, n_T)
+        _ts = torch.randint(1, self.n_T+1, (x.shape[0],)).to(self.device) # t ~ U(1, n_T)
         noise = torch.randn_like(x)  # eps ~ N(0, 1)
 
+        # apply the model to get the predicted noise
         x_t = (
             self.sqrtab[_ts, None, None, None] * x
             + self.sqrtmab[_ts, None, None, None] * noise
-        )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
-        # We should predict the "error term" from this x_t. Loss is what we return.
+        ) # x_t ~ N(sqrt(\bar{\alpha_t}) x_0, \sqrt{1-\bar{\alpha_t}})
         
         # return MSE between added noise, and our predicted noise
         return self.loss_mse(noise, self.nn_model(x_t, _ts / self.n_T))
 
     def sample(self, n_sample, size, device):
-        # to make the fwd passes efficient, we concat two versions of the dataset
-
-        x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1), sample initial noise
-
-        x_i_store = [] # keep track of generated steps in case want to plot something 
+        # sample from the model and return the generated samples and the intermediate steps for plotting
+        x_i = torch.randn(n_sample, *size).to(device)  # x_0 ~ N(0, 1)
+        x_i_store = [] # store intermediate steps for plotting
         print()
         for i in range(self.n_T, 0, -1):
             print(f'sampling timestep {i}',end='\r')
@@ -239,8 +238,8 @@ class DDPM(nn.Module):
             t_is = t_is.repeat(2,1,1,1)
 
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
-
-            # split predictions and compute weighting
+            
+            # get the predicted noise
             eps = self.nn_model(x_i, t_is)[:n_sample]
             x_i = x_i[:n_sample]
             x_i = (
@@ -256,30 +255,32 @@ class DDPM(nn.Module):
 
 def train_mnist():
 
-    # hardcoding these here
+    # training parameters
     n_epoch = 40
     batch_size = 256
     n_T = 500 # 500
     device = "cuda:0"
-    n_feat = 256 # 128 ok, 256 better (but slower)
+    n_feat = 256
     lrate = 1e-4
     save_model = True
     save_dir = './output/'
 
+    # model
     ddpm = DDPM(nn_model=Unet(in_channels=1, n_feat=n_feat), betas=(1e-4, 0.02), n_T=n_T, device=device, drop_prob=0.1)
     ddpm.to(device)
 
+    # dataset
     tf = transforms.Compose([transforms.ToTensor()]) # mnist is already normalised 0 to 1
-
     dataset = MNIST("./data", train=True, download=True, transform=tf)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=5)
     optim = torch.optim.Adam(ddpm.parameters(), lr=lrate)
 
+    # training loop
     for ep in range(n_epoch):
         print(f'epoch {ep}')
         ddpm.train()
-
-        # linear lrate decay
+        
+        # learning rate decay
         optim.param_groups[0]['lr'] = lrate*(1-ep/n_epoch)
 
         pbar = tqdm(dataloader)
@@ -296,7 +297,7 @@ def train_mnist():
             pbar.set_description(f"loss: {loss_ema:.4f}")
             optim.step()
         
-        # for eval, save an image of generated samples after last epoch
+        # save images and model
         if ep == n_epoch-1:
             ddpm.eval()
             with torch.no_grad():
