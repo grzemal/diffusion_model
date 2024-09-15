@@ -258,7 +258,7 @@ def train_mnist():
     # training parameters
     n_epoch = 40
     batch_size = 256
-    n_T = 500 # 500
+    n_T = 600 # 500
     device = "cuda:0"
     n_feat = 256
     lrate = 1e-4
